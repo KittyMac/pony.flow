@@ -20,8 +20,8 @@ actor Main is TestList
 		"""
 		
 		
-		test(_TestBadFlow)
-		//test(_TestGoodFlow)
+		//test(_TestBadFlow)
+		test(_TestGoodFlow)
 	
 	// Required to keep pony memory usage down when dealing with large chunks of memory,
 	// especially when dealing with "processor" actors who don't allocate memory themselves
@@ -72,12 +72,10 @@ actor GoodConsumer is Flowable
 		@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "flow finished\n".cstring())
 	
 	be flowReceived(dataIso: Any iso) =>
-		let data:Any ref = consume dataIso
 		try
-			let dataAsString = data as String ref
-			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "begin consuming %d bytes of data\n".cstring(), dataAsString.size())
+			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "begin consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
 			@sleep[U32](U32(1))
-			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "end consuming %d bytes of data\n".cstring(), dataAsString.size())
+			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "end consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
 		end
 
 actor BadConsumer is Flowable
@@ -85,12 +83,10 @@ actor BadConsumer is Flowable
 		@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "flow finished\n".cstring())
 
 	be flowReceived(dataIso: Any iso) =>
-		let data:Any ref = consume dataIso
 		try
-			let dataAsString = data as String ref
-			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "begin consuming %d bytes of data\n".cstring(), dataAsString.size())
+			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "begin consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
 			@sleep[U32](U32(1))
-			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "end consuming %d bytes of data\n".cstring(), dataAsString.size())
+			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "end consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
 		end
 			
 
