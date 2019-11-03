@@ -1,6 +1,6 @@
 # pony.flow
 
-**WARNING: Some of the features in this library rely on [my custom fork of pony](https://github.com/KittyMac/ponyc/tree/roc)**. Specific features which rely on this are noted in the descriptions below by the tag [custom fork].
+**WARNING: [THIS ONLY WORKS WITH MY FORK OF PONY](https://github.com/KittyMac/ponyc/tree/roc)**
 
 ### Purpose
 
@@ -16,67 +16,42 @@ We now have two actors into our architecture and are already in trouble!  The Fi
 
 ### Actor Flow Interfaces
 
-pony.flow provides several interfaces to allow creating actors which can flow data between each other in a more generic manner.  They are:
+pony.flow provides a very basic Flowable interface so you can have multiple different actors plug-n-play with each other into a processing network.  There are only two method, flowReceived() to pass data from one actor to another and flowFinished() to specify that the work is done.
 
 ```
-interface FlowConsumer
-	be flow(dataIso:Any iso)
+interface Flowable
+	be flowFinished()
+	be flowReceived(dataIso:Any iso)
 ```
-Allows unrestricted flowing of data to another actor.
 
-```
-interface FlowConsumerAck
-	be flowAck(sender:FlowProducer tag, dataIso:Any iso)
-```
-Allows flowing of data to another actor. That actor should call back to the FlowProducer's ackFlow() method when the processing of that data has been completed.
+### Custom Actor Batch Sizes
 
-```
-interface FlowProducer
-	be ackFlow()
-```
-Called by consumer actors when a previously sent message has completed processing. This is generally used to tell producers to producer more data.
+By default in the pony runtime each actor has the same sized mailbox (default at the time of this writing is 100 messages).  In our scenario above, the BZ2StreamDecompress is much slower than the FileExtStreamReader.  The FileExtStreamReader will quickly load the entire file into memory where it will sit in the BZ2StreamDecompress's mailbox.  When decompressing large files, this is a very wasteful memory usage pattern.  Ideally, only enough of the file is loaded to fully provide concurrency between the two actors (the file reader is reading while the bzip decompressor is decompressing.  Since the bzip decompressor is slow, it should be kept fed 100% of the time, and the file streaming actor should be paused when instead of just overloading the actor's mailbox).
 
-### 1-to-1 producer and consumer messaging
+To handle this gracefully I needed to make two changes to Pony. The first change allows you, the programmer, to set a custom batch size for any actor you create.  Doing so it trivial, just provide a _batch() method on your actor and return the size of the mailbox you want.
 
-Given the interfaces above, you probably guess the most obvious flow mechanism available. A producer create a chunk of data and sends it to the consumer. The producer then waits until the consumer acknowledges the message before it will produce the next message. This provides a tight coupling between the producer and consumer, completely eliminating wasted memory by not allowing any concurrency between the producer and the consumer to occur.
-
-This basic produce -> consume -> ack paradigm is useful, but not really advised as it removes concurrency (one of the main reasons to use Pony in the first place!).  However, it provides the building blocks necessary to more complex mechanisms, like rate limiting.
-
-### Rate Limiting
-
-Rate limiting builds off of the 1-to-1 produce -> consume -> ack paradigm but extends it to allow the produce to have up to a certain number of concurrent messages at one time. This allows concurrency to happen, but limits the amount of unrestrained growth that can happen.
-
-pony.flow provides a the FlowRateLimiter class to ease rewriting producer code to follow this paradigm. The following example is a producer limited to 4 concurrent messages to the consumer at a time
+In our BZ2StreamDecompress example, we can simply set that value to a low number, like 4.  This allows for the file streamer to keep the BZ2StreamDecompress 100% busy without wasting memory.
 
 ```
-actor RateLimitedProducer is FlowProducer
-	let rateLimiter:FlowRateLimiter
+actor BZ2StreamDecompress is Flowable
+
+	fun _batch():USize => 4
 	
-	let target:FlowConsumerAck tag
+	be flowFinished() =>
+		@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "flow finished\n".cstring())
 	
-	new create(target':FlowConsumerAck tag) =>
-		target = target'
-		
-		let sender = this
-		rateLimiter = FlowRateLimiter(4, {ref () =>
-				@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "produced %d bytes of data\n".cstring(), Data.size())
-				let msg = "x".mul(Data.size())
-				target.flowAck(sender, consume msg)
-			})
-		
-	be ackFlow() =>
-		rateLimiter.ack()
+	be flowReceived(dataIso: Any iso) =>
+		@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "flow received\n".cstring())
+
 ```
 
+### Self-muting Actors
 
+Unfortunately, the custom batch size per actor chane was not enough to get the desired functionality out of stock Pony. The current Pony actor muting/overloading system requires that the consumer actor fully process messages until it has exceeded its set batch size and more messages remain.  Then the actor will mute the sender and set itself to be flagged as overloaded.  It will then not unmute the sender until it has done "one processing batch" worth of messages and not exceeded the batch size.
 
-### Dynamic Actor Batch Sizes [custom fork]
+The has the downside that a fast producer can generate as many messages as it can before the actor sets itself to be overloaded, and the send can be muted (so, think thousands of messages in the slow consumers mailbox instead of the "default" 100 batch size).  What we really want is for the producer actor to mute itself when it sends a message to a "full" mailbox, and set the target actore to be overloaded at the same time. This way the fast producing file loader will mute immediately once it overflows the target mailbox, and the consuming actor can unmute it once there is any space free in its mailbox. The file loader will process concurrently, but only when it needs to. The consumer actor will be always fed (other scheduling issues not withstanding) and spend 100% of its time processing the data.
 
-This is an example of shallow mailbox overloading; the distance and complexity between the producer and the consumer is not deep, so we can solve this using a new feature of my customized ponyc, the _batch() method.
-
-By default in the pony runtime each actor has the same sized mailbox (default at the time of this writing is 100 messages).  In our scenario above, if the BZ2StreamDecompress actor's mail box overloads, all it will do is mute the FileExtStreamReader actor.  This is the desired behaviour, but letting it queue up 100 messages is undesirabe.  If we had a convenient mechanism to allow us to set the mailbox size of just the BZ2StreamDecompress actor to "2", then we can take advantage of the built in muting feature and limit the amount of wasted RAM in one blow.
-
-This solution is not perfect, because actor overloading and muting is controlled by the receiving actor only after they have processed a "batch" amount of messages at one time. In our example, the FileExtStreamReader is so fast compared to the BZ2StreamDecompress decompressor that it could potentially queue up hundreds of messages before the BZ2StreamDecompress actor has a chance to process the first two of them.
+You don't need to do anything more special than the _batch() method above.  Self-muting actors will now ensure your consumer actors will not be overloaded more than the batch size you set.
 
 
 ## License
