@@ -42,6 +42,8 @@ actor Producer
 	let target:Flowable tag
 	var count:USize
 	
+	fun _tag():USize => 1
+	
 	new create(target':Flowable tag) =>
 		target = target'
 		count = 0
@@ -49,7 +51,7 @@ actor Producer
 	
 	be produce() =>
 		count = count + 1
-		if count < 60 then
+		if count < 20 then
 			let msg = "x".mul(Data.size())
 			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "produced %d bytes of data, count = %d\n".cstring(), Data.size(), count)
 			target.flowReceived(consume msg)
@@ -66,7 +68,8 @@ actor Producer
 
 actor GoodConsumer is Flowable
 
-	fun _batch():USize => 4
+	fun _batch():USize => 10
+	fun _tag():USize => 2
 	
 	be flowFinished() =>
 		@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "flow finished\n".cstring())
@@ -79,6 +82,9 @@ actor GoodConsumer is Flowable
 		end
 
 actor BadConsumer is Flowable
+
+	fun _tag():USize => 3
+	
 	be flowFinished() =>
 		@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "flow finished\n".cstring())
 
