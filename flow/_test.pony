@@ -45,7 +45,7 @@ actor Producer
 		count = count + 1
 		if count < 20 then
 			let msg = "x".mul(Data.size())
-			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "produced %d bytes of data, count = %d\n".cstring(), Data.size(), count)
+			@fprintf[I32](@pony_os_stdout[Pointer[U8]](), "produced %d bytes of data, count = %d\n".cstring(), Data.size(), count)
 			target.flowReceived(consume msg)
 		else
 			target.flowFinished()
@@ -56,13 +56,13 @@ actor Consumer is Flowable
 	fun _tag():USize => 2
 	
 	be flowFinished() =>
-		@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "flow finished\n".cstring())
+		@fprintf[I32](@pony_os_stdout[Pointer[U8]](), "flow finished\n".cstring())
 	
 	be flowReceived(dataIso: Any iso) =>
 		try
-			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "begin consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
+			@fprintf[I32](@pony_os_stdout[Pointer[U8]](), "begin consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
 			@sleep[U32](U32(1))
-			@fprintf[I64](@pony_os_stdout[Pointer[U8]](), "end consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
+			@fprintf[I32](@pony_os_stdout[Pointer[U8]](), "end consuming %d bytes of data\n".cstring(), (dataIso as String iso).size())
 		end
 
 class iso _TestFlow is UnitTest
