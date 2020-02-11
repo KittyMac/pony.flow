@@ -1,7 +1,30 @@
 all:
-	/Volumes/Development/Development/pony/ponyc/build/release/ponyc -d -o ./build/ ./flow
-	time ./build/flow
+	corral run -- ponyc -o ./build/ ./flow
+	./build/flow
 
 test:
-	/Volumes/Development/Development/pony/ponyc/build/release/ponyc -V=0 -d -o ./build/ ./flow
+	corral run -- ponyc -V=0 -o ./build/ ./flow
 	./build/flow
+
+
+
+
+corral-fetch:
+	@corral clean -q
+	@corral fetch -q
+
+corral-local:
+	-@rm corral.json
+	-@rm lock.json
+	@corral init -q
+	#@corral add /Volumes/Development/Development/pony/pony.stringExt -q
+
+corral-git:
+	-@rm corral.json
+	-@rm lock.json
+	@corral init -q
+	#@corral add github.com/KittyMac/pony.stringExt.git -q
+
+ci: corral-git corral-fetch all
+	
+dev: corral-local corral-fetch all
